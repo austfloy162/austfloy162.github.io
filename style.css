@@ -1,0 +1,166 @@
+body 
+  
+* {
+    box-sizing: border-box; 
+    margin: 0;
+    padding: 0;
+}
+
+body {
+    
+    font-family: 'Segoe UI', 'Helvetica Neue' !important ;
+    line-height: 1.6;
+    background-color: #f0f4f8; 
+    color: #333; 
+    min-height: 100vh;
+}
+
+
+nav {
+    
+    background-color: #1f2d3d; 
+    padding: 15px 40px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1); 
+}
+
+.logo {
+    color: #ecf0f1; 
+    font-size: 1.6em;
+    font-weight: 700;
+}
+
+#nav-ul {
+    list-style: none;
+    display: flex;
+}
+
+.nav-li a {
+    color: #bdc3c7;
+    text-decoration: none;
+    margin-left: 25px;
+    font-weight: 500;
+    
+    transition: color 0.3s ease;
+}
+
+.nav-li a:hover {
+    color: #3498db; 
+}
+
+
+
+.profile-layout {
+    
+    max-width: 900px;
+    margin: 40px auto;
+    padding: 30px;
+    
+    background-color: #ffffff; 
+    border-radius: 12px; 
+    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.1); 
+    
+    
+    display: grid;
+    grid-template-columns: 280px 1fr; 
+    gap: 40px;
+    align-items: start; 
+}
+
+
+.sidebar-img {
+    width: 100%;
+    height: auto;
+    display: block;
+    
+    border-radius: 8px; 
+    object-fit: cover;
+}
+
+
+.info-and-interests {
+    display: flex;
+    flex-direction: column;
+    gap: 30px; 
+    padding-top: 10px;
+}
+
+
+.content h2 {
+    font-size: 2.5em;
+    font-weight: 700;
+    color: #2c3e50; 
+    margin-bottom: 5px;
+}
+
+.subtitle {
+    font-size: 1.1em;
+    color: #7f8c8d; 
+    font-weight: 400;
+}
+
+#interests h3 {
+    font-size: 1.3em;
+    color: #3498db; 
+    border-bottom: 2px solid #ecf0f1; 
+    padding-bottom: 5px;
+    margin-bottom: 15px;
+}
+
+#interests ul {
+    list-style-type: none; 
+    padding-left: 0;
+}
+
+#interests li {
+    margin-bottom: 8px;
+    font-size: 1em;
+    position: relative;
+    padding-left: 20px;
+}
+
+
+#interests li::before {
+    content: '•'; 
+    color: #3498db;
+    font-size: 1.2em;
+    position: absolute;
+    left: 0;
+    top: -2px;
+}
+
+
+@media (max-width: 768px) {
+    .profile-layout {
+        
+        grid-template-columns: 1fr;
+        padding: 20px;
+        margin: 20px;
+    }
+
+    nav {
+        flex-direction: column;
+        text-align: center;
+        padding: 15px 20px;
+    }
+    
+    .logo {
+        margin-bottom: 10px;
+    }
+
+    #nav-ul {
+        padding-top: 5px;
+        width: 100%;
+        justify-content: space-around;
+    }
+
+    .sidebar {
+        
+        max-width: 250px;
+        margin: 0 auto;
+    }
+
+
+} 
