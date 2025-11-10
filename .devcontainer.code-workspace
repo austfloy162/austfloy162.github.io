@@ -1,0 +1,25 @@
+{
+	"folders": [
+		{
+			"path": ".devcontainer"
+		},
+		{
+			"path": ".github"
+		},
+		{
+			"path": ".vscode"
+		},
+		{
+			"path": "fsd-projects"
+		},
+		{
+			"path": "project-instructions"
+		},
+		{
+			"path": "scripts"
+		}
+	],
+	"settings": {
+		"liveServer.settings.multiRootWorkspaceName": ".github"
+	}
+}

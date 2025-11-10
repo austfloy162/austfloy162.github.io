@@ -1,508 +1,654 @@
-# Platformer-neo
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Runner: The Byte Hunt</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Use Inter font -->
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
+        body { font-family: 'Inter', sans-serif; background-color: #1f2937; }
+        canvas {
+            display: block;
+            background-color: #111827; /* Dark background */
+            border-radius: 0.75rem;
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.5);
+            margin: 0 auto;
+        }
+        .game-container {
+            padding: 1rem;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        .restart-button {
+            background: linear-gradient(145deg, #1d4ed8, #2563eb);
+            transition: all 0.2s ease;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.2);
+            border: none;
+        }
+        .restart-button:hover {
+            background: linear-gradient(145deg, #2563eb, #3b82f6);
+            transform: translateY(-1px);
+            box-shadow: 0 6px 8px rgba(0, 0, 0, 0.3);
+        }
+        @media (max-width: 768px) {
+            .game-container {
+                padding: 0.5rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="game-container">
+        <h1 class="text-3xl font-bold text-center mb-4 text-cyan-400 border-b border-cyan-700 pb-2">Data Runner: The Byte Hunt</h1>
+        <div id="game-info" class="text-center mb-4 p-3 bg-gray-800 rounded-lg shadow-md">
+            <p class="text-yellow-400">Collect <span id="score-display">0</span> Data Shards & retrieve the central database!</p>
+        </div>
+        <canvas id="gameCanvas" class="w-full"></canvas>
+        
+        <!-- Game Over/Win Message Box -->
+        <div id="message-box" class="fixed inset-0 bg-black bg-opacity-70 hidden items-center justify-center z-50">
+            <div class="bg-gray-800 p-8 rounded-xl shadow-2xl text-center w-80 border-t-4 border-cyan-500 transform transition duration-300 scale-100">
+                <p id="message-text" class="text-white text-xl font-bold mb-6"></p>
+                <button onclick="restartGame()" class="restart-button text-white font-bold py-3 px-6 rounded-lg transition duration-200">
+                    Restart Mission
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+    <!-- Firebase Imports for High Score (Kept separate for module import) -->
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : null;
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+
+
+        let app, db, auth;
+        let userId;
+
+
+        async function initializeFirebase() {
+            try {
+                if (firebaseConfig) {
+                    app = initializeApp(firebaseConfig);
+                    db = getFirestore(app);
+                    auth = getAuth(app);
+
+
+                    if (initialAuthToken) {
+                        await signInWithCustomToken(auth, initialAuthToken);
+                    } else {
+                        await signInAnonymously(auth);
+                    }
+
+
+                    userId = auth.currentUser?.uid || crypto.randomUUID();
+                    console.log(`Firebase initialized. User ID: ${userId}`);
+                } else {
+                    console.error("Firebase config not found. Running in local mode.");
+                }
+            } catch (error) {
+                console.error("Firebase initialization failed:", error);
+            }
+        }
 
-### An intro to video game programming featuring HalleBot in a configurable platformer
 
-**Table of Contents**
+        window.saveHighScore = async (score) => {
+            if (!db || !userId) return;
 
-- [Before You Start](#before-you-start)
-  - [Objective](#objective)
-  - [Requirements and Grading](#requirements-and-grading)
-  - [Functions Recap](#functions-recap)
-- [Lesson Steps](#lesson-steps)
-  - [Work Flow](#work-flow-how-to-navigate-through-the-lesson-steps)
-  - [TODO 0 : Preview Your Site](#todo-0-preview-your-site-with-live-server)
-  - [TODO 1: Enable the Grid](#todo-1-enable-the-grid)
-  - [TODO 2: Platforms](#todo-2-add-platforms)
-  - [TODO 3: Collectables](#todo-3-add-collectables)
-  - [TODO 4: Cannons](#todo-4-add-cannons)
-  - [TODO 5: Make your level challenging](#todo-5-make-your-level-challenging)
-  - [TODO 6: Go Live](#todo-6-go-live)
 
-<br><br>
+            const path = `/artifacts/${appId}/users/${userId}/data_runner_scores/high_score`;
+            try {
+                await setDoc(doc(db, path), {
+                    score: score,
+                    timestamp: new Date().toISOString()
+                }, { merge: true });
+                console.log("High score saved successfully.");
+            } catch (error) {
+                console.error("Error saving high score:", error);
+            }
+        };
 
-# Before You Start
 
-## **Objective**
+        initializeFirebase();
+    </script>
 
-Get ready to bring your game design ideas to life! 🎮 In this project, you’ll design a playable level for a platformer game, using **JavaScript functions** to place platforms, collectables, and cannons that make gameplay exciting and challenging.
 
-You’ll be learning to:
+    <!-- Game Logic -->
+    <script>
+        const GRAVITY = 0.98;
+        const PLAYER_SPEED = 6;
+        const JUMP_POWER = -16;
+        const CAM_LERP = 0.1;
 
-- **Call functions** with specific values (arguments) to position game elements precisely.
-- **Think like a game designer** as you create a level that’s both fun and challenging for players.
 
-By the end of this project, you’ll have built a custom game level that’s ready for action! Your level will include multiple platforms and collectables, and strategic cannons that keep players on their toes. Let’s get started and make something epic! 🚀
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const scoreDisplay = document.getElementById('score-display');
+        const messageBox = document.getElementById('message-box');
+        const messageText = document.getElementById('message-text');
 
-<br><br>
 
-## **Requirements and Grading**
+        let gameState = {
+            player: null,
+            platforms: [],
+            collectables: [],
+            cannons: [],
+            bullets: [],
+            score: 0,
+            gameOver: false,
+            gameWon: false,
+            cameraX: 0,
+            frame: 0 // Used for animation/rotation
+        };
 
-| Requirement                     | Description                                                   | Points |
-| ------------------------------- | ------------------------------------------------------------- | ------ |
-| **Create at least 5 platforms** | Platforms should be placed strategically throughout the game  | 30     |
-| **Add 3 collectables**          | Place collectables at various positions using different types | 30     |
-| **Add 3 cannons**               | Place cannons on different sides with varying delays          | 30     |
-| **Design a playable level**     | Create a level that’s challenging but achievable              | 10     |
+
+        let keys = {
+            left: false,
+            right: false,
+            up: false,
+            canJump: true
+        };
 
-<br><br>
 
-## **Functions Recap**
+        // --- ENTITY CLASSES ---
 
-Functions are reusable blocks of code that perform a specific task. You “call” a function to run the code inside it. Many functions require inputs, known as **_arguments_**, which are the specific values the function uses to perform its task.
 
----
-
-### Key Terms
-
-<div style="width: 80%; margin: auto;">
-
-| Term              | Definition                                                                                             |
-| ----------------- | ------------------------------------------------------------------------------------------------------ |
-| **Function Call** | Code that runs the function and gives it any necessary inputs (arguments).                             |
-| **Arguments**     | The actual values you pass into the function when you call it (e.g., `500` for x in `createPlatform`). |
-| **Parameters**    | Placeholders in the function definition that represent the values needed to perform the task.          |
-
-</div>
-
----
-
-### Example
-
-For example, calling `createPlatform(500, 300, 200, 20);` means:
-
-- **500 and 300** are the x and y coordinates where the platform will appear.
-- **200 and 20** are the platform’s width and height.
-
-These numbers are **arguments** passed to the function, matching the **parameters** defined in the function.
-
-<!-- 4 line breaks between TODOs -->
-<br><br><br><br>
-
-# Lesson Steps
-
-## **Work Flow: How to Navigate Through the Lesson Steps**
-
-🎯 **Goal:** Learn how to follow the steps in this lesson to build and customize your game one step at a time.
-
----
-
-### Step-by-Step Work Flow
-
-1. 📂 **Open the `platformer.js` file** in your codespace to get started.
-   - 🔍 Locate the file tree (the list of files and folders) in the left panel of your codespace.
-   - Click the `fsd-projects` folder 📂 in your file tree expand the list of projects.
-   - Click on the `platformer` folder 📂 located within the `fsd-projects` folder.
-   - Click on the `platformer.js` file. Coding for all steps will be done in this file.
-2. **Follow the instructions carefully** for each TODO:
-
-   - Pay attention to where new code should be added.
-   - Only code inside the designated areas
-     - Make sure all function calls go between the _`ONLY CHANGE BELOW THIS POINT`_ and _`ONLY CHANGE ABOVE THIS POINT`_ comments.
-
-3. 🖥️ **Preview your game regularly using Live Server** to see how your changes affect the game level.
-
----
-
-<table style="width: 80%; margin-left: auto; margin-right: auto; border-collapse: collapse; margin-top: 15px; background-color: #2c2c2c; border: 1px solid #444; border-radius: 8px; overflow: hidden;">
-  <tr>
-    <th style="text-align: left; padding: 10px; background-color: #444; color: #e2e2e2; border-bottom: 1px solid #666;">
-      💡 Key Reminders
-    </th>
-  </tr>
-  <tr>
-    <td style="padding: 10px; color: #e2e2e2;">
-      - 📖 Read each step closely before adding any code.<br>
-      - 🖥️ Preview frequently to make sure your game is structured the way you would like it.
-    </td>
-  </tr>
-</table>
-
----
-
-<br>
-
-### ✅ **Check Your Work!**
-
-- **After each TODO**, double-check your code to ensure it matches the examples.
-- If you encounter issues, **preview your site** using Live Server to troubleshoot.
-
-<!-- 4 line breaks between TODOs -->
-<br><br><br><br>
-
-## **TODO 0: Preview Your Site with Live Server**
-
-🎯 **Goal:** Preview your site in the browser to see how it looks and behaves as you make changes.
-
----
-
-### Step-by-Step Instructions
-
-There are two ways to open your project with **Live Server**:
-
-#### **Option 1: Right-Click Method**
-
-1. 📂 **Find the `index.html` file** in the file tree on the left side of your codespace.
-2. **Right-click on `index.html`** and select **“Open with Live Server.”**
-
-#### **Option 2: Go Live Button in the Bottom Panel**
-
-1. **Look at the bottom-right corner** of your codespace.
-2. **Click the “Go Live” button** to launch Live Server.
-
-<br>
-
-### ✅ **Check Your Work!**
-
-- **After launching Live Server**, your browser should open a new tab with your site.
-- By default, Live Server will always load your home page. To view your platormer game:
-  - Click the link to your Portfolio page to access your project links.
-  - Then navigate to your Platformer project by clicking the Platformer link.
-
-<!-- 4 line breaks between TODOs -->
-<br><br><br><br>
-
-## **TODO 1: Enable the Grid**
-
-🎯 **Goal:** Enable the grid in your game to see the x and y coordinates in 100-pixel increments.
-
----
-
-### Step-by-Step Instructions
-
-1. **Uncomment the `toggleGrid` function**
-
-   - **Find the `toggleGrid()` line in your JavaScript file**. You’ll see it has `//` at the beginning, making it inactive.
-   - Remove `//` to enable the grid in your game.
-
-2. **Check your game in Live Server**
-
-   - Refresh your game to see a grid appear on the screen, marking x and y positions every 100 pixels.
-   - This grid is optional but can be very helpful in placing game items more precisely.
-
-3. **Using Comments to Toggle the Grid**
-   - You can easily enable or disable the grid by commenting out the `toggleGrid()` function call.
-   - Use the **shortcut** `Ctrl + /` (Windows) or `Cmd + /` (Mac) to quickly add or remove `//` from the beginning of the line.
-
----
-
-<table style="width: 80%; margin-left: auto; margin-right: auto; border-collapse: collapse; margin-top: 15px; background-color: #2c2c2c; border: 1px solid #444; border-radius: 8px; overflow: hidden;">
-  <tr>
-    <th style="text-align: left; padding: 10px; background-color: #444; color: #e2e2e2; border-bottom: 1px solid #666;">
-      💡 Why Use the Grid?
-    </th>
-  </tr>
-  <tr>
-    <td style="padding: 10px; color: #e2e2e2;">
-      The grid is a useful guide for precisely placing items in your game. Each gridline marks a 100-pixel increment along the x and y axes, helping you determine specific coordinates. Although it’s not required, it can make designing your level much easier!
-    </td>
-  </tr>
-</table>
-
----
-
-<br>
-
-### ✅ **Check Your Work!**
-
-- **Preview your game** in Live Server to confirm the grid appears correctly.
-- Experiment with adding and removing the grid to see how it affects your ability to place items.
-
-<!-- 4 line breaks between TODOs -->
-<br><br><br><br>
-
-## **TODO 2:** Add _Platforms_
-
-🎯 **Goal:** Add platforms to your game for the player to jump on and navigate the level.
-
----
-
-### Step-by-Step Instructions
-
-1. 🔍 **Locate the section in your code** where you can add platforms.
-
-   - Add your code below the comment that says `// TODO 2 - Create Platforms`
-   - You’ll be using the `createPlatform` function to set the position and size of each platform.
-
-2. **Understand the Arguments for `createPlatform`**
-   - The `createPlatform` function requires several arguments to specify where each platform appears and its dimensions.
-   - Refer to the table below to understand each argument’s purpose:
-
-   <div style="width: 80%; margin: auto;">
-
-| Argument | Description                                                             | Example Value        |
-| -------- | ----------------------------------------------------------------------- | -------------------- |
-| `x`      | x-coordinate of the platform                                            | `500`                |
-| `y`      | y-coordinate of the platform                                            | `300`                |
-| `width`  | Width of the platform in pixels                                         | `200`                |
-| `height` | Height of the platform in pixels                                        | `20`                 |
-| `color`  | (Optional) Color of the platform; will default to grey if not specified | `"hotpink"`          |
-
-   </div>
-
-Example function calls:
-
-```javascript
-createPlatform(500, 0, 20, 290);
-createPlatform(1350, 400, 50, 50, "red");
-```
-
-<br>
-
-3. **Add at least 5 platforms** in your game by calling `createPlatform` with different arguments.
-   - **Create a new line for each platform**: To add multiple platforms, you’ll need to call createPlatform separately on a new line for each one. Each platform should have its own line of code with its own specific x, y, width, and height values.
-   - Remember, the y-axis is inverted in 2D graphics, so larger `y` values move platforms lower on the screen.
-
----
-
-### 🎨 Tip: Use Color to Track Your Progress!
-
-As you're adding and positioning platforms, it can be really helpful to change their colors *after* they're in the right place.
-
-This way, you can quickly spot which platforms are already finished and which ones you're still working on. It's a great habit for staying organized while building.
-
-In your `createPlatform()` call, you can change the fill color by updating the last parameter. For example:
-
-```js
-createPlatform(100, 20, 10, 10, "lime"); // bright green for a finished platform
-```
-
-> You can leave the color parameter blank to use the default grey color while figuring out the desired position of your platform. Once you’re happy with the placement, change the color to something else to make it clear that it is finished.
-
----
-
-<table style="width: 80%; margin-left: auto; margin-right: auto; border-collapse: collapse; margin-top: 15px; background-color: #2c2c2c; border: 1px solid #444; border-radius: 8px; overflow: hidden;">
-  <tr>
-    <th style="text-align: left; padding: 10px; background-color: #444; color: #e2e2e2; border-bottom: 1px solid #666;">
-      💡 Tips for Platform Placement
-    </th>
-  </tr>
-  <tr>
-    <td style="padding: 10px; color: #e2e2e2;">
-      ⚙️ <strong>Use trial and error!</strong> Platforms might not land perfectly on the first try. Adjust the arguments (x, y, width, height) until you’re satisfied with the setup.
-      <br><br>
-      🪜 <strong>Work from the bottom up</strong>: Place your first platforms near the bottom of the game area. Building upward makes it easier to create a path the player can jump between.
-    </td>
-  </tr>
-</table>
-
----
-
-<br>
-
-### ✅ **Check Your Work!**
-
-- **Preview your game** in Live Server to see if the platforms appear as expected.
-- Make sure you have at least 5 platforms placed at different heights and positions.
-
-<!-- 4 line breaks between TODOs -->
-<br><br><br><br>
-
-## **TODO 3:** Add _Collectables_
-
-🎯 **Goal:** Add items (collectables) for the player to gather while navigating the game.
-
----
-
-### Step-by-Step Instructions
-
-1. 🔍 **Locate the section in your code** designated for adding collectables.
-
-   - Use the `createCollectable` function to add items at specific locations on the screen.
-
-2. **Understand the Arguments for `createCollectable`**
-
-   - The `createCollectable` function requires arguments that control the item’s type and position.
-   - Refer to the table below for details:
-
-   <div style="width: 80%; margin: auto;">
-
-   | Argument  | Description                                                             | Example Value |
-   | --------- | ----------------------------------------------------------------------- | ------------- |
-   | `type`    | The type of collectable (e.g., "database", "diamond")                          | `"diamond"`      |
-   | `x`       | x-coordinate of the collectable                                         | `200`         |
-   | `y`       | y-coordinate of the collectable                                         | `170`         |
-   | `gravity` | (Optional) Controls how the item falls; set to `0` if it shouldn’t fall | `0.5`         |
-   | `bounce`  | (Optional) Controls how much the item bounces when it lands             | `0.7`         |
-
-   </div>
-
-   **Important**: You can use any of the following values for your `type`: `"database"`, `"diamond"`, `"grace"`, `"kennedi"`, `"max"`, and `"steve"`
-
-   ---
-
-   Example function calls:
-
-   ```javascript
-   createCollectable("steve", 1350, 50);
-   createCollectable("diamond", 200, 170, 0.5, 0.7);
-   ```
-
-<br>
-
-3. **Add at least 3 collectables** at different positions throughout your game. Use different `type` values to add variety.
-
----
-
-<table style="width: 80%; margin-left: auto; margin-right: auto; border-collapse: collapse; margin-top: 15px; background-color: #2c2c2c; border: 1px solid #444; border-radius: 8px; overflow: hidden;">
-  <tr>
-    <th style="text-align: left; padding: 10px; background-color: #444; color: #e2e2e2; border-bottom: 1px solid #666;">
-      💡 Tips for Placing Collectables
-    </th>
-  </tr>
-  <tr>
-    <td style="padding: 10px; color: #e2e2e2;">
-      💎 <strong>Experiment with positioning</strong>: Test different x and y values to place items at reachable spots. Adjust as needed so that the collectables are accessible.<br><br>
-      🔄 <strong>Use gravity and bounce carefully</strong>: These are optional values. Start with <code>0</code> if you want a stationary item, and increase them slightly to add movement or challenge. Using <code>1</code> for both values will make your object bounce to the same height each time.
-    </td>
-  </tr>
-</table>
-
----
-
-<br>
-
-### ✅ **Check Your Work!**
-
-- **Preview your game** in Live Server to ensure the collectables appear where you expect them.
-- Make sure you have at least 3 collectables, with different types if possible.
-
-<!-- 4 line breaks between TODOs -->
-<br><br><br><br>
-
-## **TODO 4:** Add _Cannons_
-
-🎯 **Goal:** Add cannons to your game to introduce obstacles for the player.
-
----
-
-### Step-by-Step Instructions
-
-1. 🔍 **Locate the section in your code** for adding cannons.
-
-   - Use the `createCannon` function to place each cannon along the screen edges.
-
-2. **Understand the Arguments for `createCannon`**
-
-   - The `createCannon` function has arguments for placement and firing speed. Review the table for details:
-
-   <div style="width: 80%; margin: auto;">
-
-   | Argument   | Description                                                     | Example Value |
-   | ---------- | --------------------------------------------------------------- | ------------- |
-   | `side`     | Which side of the screen to place the cannon (left, right, top) | `"left"`      |
-   | `position` | Position along the side (distance from top or left)             | `300`         |
-   | `delay`    | Time in milliseconds between shots                              | `2000`        |
-
-   </div>
-
-   **Important**: You can use any of the following string values for your `side`: `"top"`, `"bottom"`, `"left"`, or `"right"`
-   
-  
-   --- 
-
-   Example function calls:
-
-   ```javascript
-   createCannon("top", 200, 100);
-   createCannon("right", 300, 2000);
-   ```
-
-<br>
-
-3. **Add at least 3 cannons** on different sides of the screen. Adjust their positions and delays to vary the difficulty.
-
----
-
-<table style="width: 80%; margin-left: auto; margin-right: auto; border-collapse: collapse; margin-top: 15px; background-color: #2c2c2c; border: 1px solid #444; border-radius: 8px; overflow: hidden;">
-  <tr>
-    <th style="text-align: left; padding: 10px; background-color: #444; color: #e2e2e2; border-bottom: 1px solid #666;">
-      💡 Tips for Placing Cannons
-    </th>
-  </tr>
-  <tr>
-    <td style="padding: 10px; color: #e2e2e2;">
-      🔄 <strong>Try different sides:</strong> Place cannons on the left, right, and top to create diverse challenges.<br><br>
-      ⏲️ <strong>Adjust delay times:</strong> Faster delays increase difficulty. Start with longer delays and adjust as needed to create the right level of challenge.<br><br>
-      🎯 <strong>Position thoughtfully:</strong> Place cannons where they can cover areas the player frequently jumps to.
-    </td>
-  </tr>
-</table>
-
----
-
-### ✅ **Check Your Work!**
-
-- **Preview your game** in Live Server to make sure the cannons are firing correctly.
-- Ensure you have at least 3 cannons placed on different sides with varying delay intervals.
-
-<!-- 4 line breaks between TODOs -->
-<br><br><br><br>
-
-## **TODO 5:** _Make your level challenging!_
-
-Make sure your game unique and challenging! In order to get full credit your project must be playable! Specifically,
-
-- HalleBot can access all collectables.
-- There are platforms of varying heights that require jumping or avoiding obstacles.
-- Cannons are placed to create a challenge.
-
-<!-- 4 line breaks between TODOs -->
-<br><br><br><br>
-
-## **TODO 6:** *Go Live*
-
-🎯 **Goal:** Push your changes to GitHub and make your platformer game go live.
-
----
-
-### Step-by-Step Instructions
-
-1. **Ensure the grid is not visible**
-   - If you used the grid to help build your game, make sure you disable it before saving your work. The grid is a tool for developers to place items accurately, but it can distract people (or dogs) who are playing your game.
-   - To remove the grid, find the `toggleGrid()` function call underneath the `// TODO 1 - Enable the Grid` comment. Add two slashes (`//`) in front of the `toggleGrid` function call to disable that line of code.
-
-2. **Open the terminal in your codespace**
-   - If the terminal isn’t visible, click the **Hamburger Menu > Terminal > New Terminal**.
-
-3. **Run the required git commands one by one** in the terminal, pressing enter after each command to run it. Reference the table and comment below for how to run the three commands:
-
-| Command              | Purpose                                                      |
-|----------------------|--------------------------------------------------------------|
-| `git add .`          | Stages all your changes so Git is aware of them.             |
-| `git commit -m "Finalized platformer game"`      | Saves a version of your work with a brief message.           |
-| `git push`           | Uploads your committed changes to GitHub, making them live.  |
-
-<br>
-
-4. **Wait a few minutes for the changes to go live at your-username.github.io.**
-
----
-
-<br>
-
-### ✅ **Check Your Work!**
-
-- Visit the site `your-github-username.github.io` to see your platformer game live on the internet.
-  - Make sure to replace the text `"your-github-username"` with your actual github username when entering the URL in your browser.
-- Navigate to your Platformer link on your Portfolio page to ensure it is live on the web.
-  - You might need to refresh your page for your changes to appear.
-
-<br>
-
-<hr>
-
-<br>
-
-### 🎉🎉🎉 Congratulations! You can now challenge your classmates and friends to beat your customized game! 🎉🎉🎉
-
-### **Bonus Challenges**
-
-1. **Moving Collectable Challenge**:
-   - Create a collectable that moves horizontally between two points (100 and 300 pixels)
-   - Example: `createCollectable("gem", 200, 100, 0, 1, 100, 300, 2)`
-   - The collectable should smoothly move back and forth at a reasonable speed
-
-2. **Moving Platform Challenge**:
-   - Design a platform that moves horizontally between two positions
-   - Example: `createPlatform(400, 300, 200, 20, "blue", 300, 500, 1)`
-   - Make sure the platform is wide enough for HalleBot to land on while moving
+        class Player {
+            constructor(x, y, w, h) {
+                this.x = x;
+                this.y = y;
+                this.w = w;
+                this.h = h;
+                this.dx = 0;
+                this.dy = 0;
+                this.onGround = false;
+            }
+
+
+            update() {
+                this.dy += GRAVITY;
+
+
+                this.dx = 0;
+                if (keys.left) this.dx = -PLAYER_SPEED;
+                if (keys.right) this.dx = PLAYER_SPEED;
+
+
+                this.x += this.dx;
+                this.y += this.dy;
+
+
+                this.checkPlatformCollision();
+
+
+                if (this.y > canvas.height + 100) {
+                    endGame("Mission Failed: Lost in the system void!", false);
+                }
+            }
+
+
+            checkPlatformCollision() {
+                this.onGround = false;
+                for (const platform of gameState.platforms) {
+                    // Check for collision when landing on top of a platform
+                    if (this.x < platform.x + platform.w &&
+                        this.x + this.w > platform.x &&
+                        this.y + this.h > platform.y &&
+                        this.y + this.h - this.dy <= platform.y) {
+
+                        this.y = platform.y - this.h;
+                        this.dy = 0;
+                        this.onGround = true;
+                        keys.canJump = true;
+                        
+                        // Transfer momentum from moving platform
+                        if (platform.move) {
+                             this.x += platform.dx;
+                        }
+
+                        return;
+                    }
+                }
+            }
+
+
+            jump() {
+                if (this.onGround && keys.canJump) {
+                    this.dy = JUMP_POWER;
+                    keys.canJump = false;
+                }
+            }
+
+
+            draw() {
+                ctx.save();
+                ctx.fillStyle = '#fde047'; // Cyber Yellow
+                ctx.shadowColor = '#fde047';
+                ctx.shadowBlur = 5;
+
+                // Draw rounded rectangle for the player
+                const rx = this.x - gameState.cameraX;
+                const ry = this.y;
+                const r = 5; // radius for corners
+
+                ctx.beginPath();
+                ctx.moveTo(rx + r, ry);
+                ctx.lineTo(rx + this.w - r, ry);
+                ctx.arcTo(rx + this.w, ry, rx + this.w, ry + r, r);
+                ctx.lineTo(rx + this.w, ry + this.h - r);
+                ctx.arcTo(rx + this.w, ry + this.h, rx + this.w - r, ry + this.h, r);
+                ctx.lineTo(rx + r, ry + this.h);
+                ctx.arcTo(rx, ry + this.h, rx, ry + this.h - r, r);
+                ctx.lineTo(rx, ry + r);
+                ctx.arcTo(rx, ry, rx + r, ry, r);
+                ctx.closePath();
+                ctx.fill();
+
+                ctx.restore();
+            }
+        }
+
+
+        class Platform {
+            constructor(x, y, w, h, color, move = null) {
+                this.x = x;
+                this.y = y;
+                this.w = w;
+                this.h = h;
+                this.color = color;
+                this.dx = 0;
+                this.move = move; // { startX, endX, speed }
+
+                if (this.move) {
+                    this.startX = move.startX;
+                    this.endX = move.endX;
+                    this.speed = move.speed;
+                    this.dx = this.speed;
+                }
+            }
+
+            update() {
+                if (this.move) {
+                    this.x += this.dx;
+                    // Check boundaries and reverse direction
+                    if (this.dx > 0 && this.x >= this.endX) {
+                        this.dx *= -1;
+                        this.x = this.endX;
+                    } else if (this.dx < 0 && this.x <= this.startX) {
+                        this.dx *= -1;
+                        this.x = this.startX;
+                    }
+                }
+            }
+
+            draw() {
+                ctx.fillStyle = this.color;
+                ctx.fillRect(this.x - gameState.cameraX, this.y, this.w, this.h);
+            }
+        }
+
+
+        class Collectable {
+            constructor(x, y, type) {
+                this.x = x;
+                this.y = y;
+                this.type = type;
+                this.size = 20;
+                this.collected = false;
+            }
+            
+            draw() {
+                if (this.collected) return;
+                ctx.save();
+                ctx.translate(this.x - gameState.cameraX + this.size / 2, this.y + this.size / 2);
+                
+                if (this.type === 'diamond') {
+                    // Rotating Data Shard (Diamond)
+                    const rotationSpeed = gameState.frame * 0.05;
+                    ctx.rotate(rotationSpeed);
+
+                    ctx.fillStyle = '#3b82f6'; // Light Blue
+                    ctx.shadowColor = '#3b82f6';
+                    ctx.shadowBlur = 8;
+                    
+                    // Simple Diamond Shape
+                    const s = this.size * 0.7;
+                    ctx.beginPath();
+                    ctx.moveTo(0, -s / 2);
+                    ctx.lineTo(s / 2, 0);
+                    ctx.lineTo(0, s / 2);
+                    ctx.lineTo(-s / 2, 0);
+                    ctx.closePath();
+                    ctx.fill();
+
+                } else if (this.type === 'database') {
+                    // Final Database Target (Red Cube)
+                    ctx.fillStyle = '#ef4444';
+                    ctx.shadowColor = '#ef4444';
+                    ctx.shadowBlur = 15;
+                    ctx.fillRect(-this.size / 2, -this.size / 2, this.size, this.size);
+                    
+                    ctx.fillStyle = '#ffffff';
+                    ctx.shadowBlur = 0;
+                    ctx.font = '10px Inter';
+                    ctx.textAlign = 'center';
+                    ctx.textBaseline = 'middle';
+                    ctx.fillText('DB', 0, 0);
+                }
+
+                ctx.restore();
+            }
+        }
+
+
+        class Cannon {
+            constructor(x, y, direction, fireRate) {
+                this.x = x;
+                this.y = y;
+                this.size = 20;
+                this.direction = direction;
+                this.fireRate = fireRate;
+                this.timer = 0;
+            }
+            update() {
+                this.timer++;
+                if (this.timer >= this.fireRate) {
+                    this.shoot();
+                    this.timer = 0;
+                }
+            }
+            shoot() {
+                let bulletX = this.x + this.size / 2;
+                let bulletY = this.y + this.size / 2;
+                let dx = 0, dy = 0;
+
+                switch (this.direction) {
+                    case 'up': dy = -8; bulletY = this.y - 5; break;
+                    case 'down': dy = 8; bulletY = this.y + this.size + 5; break;
+                    case 'left': dx = -8; bulletX = this.x - 5; break;
+                    case 'right': dx = 8; bulletX = this.x + this.size + 5; break;
+                }
+                gameState.bullets.push(new Bullet(bulletX, bulletY, dx, dy));
+            }
+            draw() {
+                ctx.fillStyle = '#dc2626'; // Red Cannon Body
+                ctx.fillRect(this.x - gameState.cameraX, this.y, this.size, this.size);
+
+                ctx.fillStyle = '#fef08a'; // Yellow Barrel
+                ctx.shadowColor = '#fef08a';
+                ctx.shadowBlur = 5;
+
+                // Draw barrel pointing in direction
+                if (this.direction === 'up') ctx.fillRect(this.x + this.size/4 - gameState.cameraX, this.y - 10, this.size/2, 10);
+                if (this.direction === 'down') ctx.fillRect(this.x + this.size/4 - gameState.cameraX, this.y + this.size, this.size/2, 10);
+                if (this.direction === 'left') ctx.fillRect(this.x - 10 - gameState.cameraX, this.y + this.size/4, 10, this.size/2);
+                if (this.direction === 'right') ctx.fillRect(this.x + this.size - gameState.cameraX, this.y + this.size/4, 10, this.size/2);
+
+                ctx.shadowBlur = 0;
+            }
+        }
+
+
+        class Bullet {
+            constructor(x, y, dx, dy) {
+                this.x = x;
+                this.y = y;
+                this.dx = dx;
+                this.dy = dy;
+                this.radius = 5;
+                this.isAlive = true;
+            }
+            update() {
+                this.x += this.dx;
+                this.y += this.dy;
+                // Check if outside reasonable bounds
+                if (this.x < -1000 || this.x > 3500 || this.y < -1000 || this.y > canvas.height + 1000) {
+                    this.isAlive = false;
+                }
+            }
+            draw() {
+                ctx.fillStyle = '#fef08a'; // Projectile color
+                ctx.beginPath();
+                ctx.arc(this.x - gameState.cameraX, this.y, this.radius, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        }
+
+
+        // --- LEVEL DATA ---
+
+
+        const levelData = {
+            platforms: [
+                // Ground 1 (Start Area)
+                { x: 0, y: 580, w: 600, h: 20, color: '#374151' },
+                
+                // Jumps
+                { x: 100, y: 500, w: 80, h: 15, color: '#10B981' },
+                { x: 250, y: 450, w: 80, h: 15, color: '#10B981' },
+                { x: 400, y: 400, w: 80, h: 15, color: '#10B981' },
+                
+                // Long platform with Cannon above
+                { x: 650, y: 350, w: 300, h: 20, color: '#3B82F6' },
+                
+                // Bridge section with bottom cannon
+                { x: 1050, y: 580, w: 400, h: 20, color: '#374151' },
+                
+                // Floating steps
+                { x: 1500, y: 500, w: 50, h: 20, color: '#10B981' },
+                { x: 1650, y: 450, w: 50, h: 20, color: '#10B981' },
+                
+                // ** MOVING PLATFORM ** (Moves between x=1800 and x=2200)
+                { x: 1800, y: 350, w: 150, h: 20, color: '#FCD34D', move: { startX: 1800, endX: 2200, speed: 1.5 } },
+                
+                // Ground 2 (End Area)
+                { x: 2350, y: 580, w: 300, h: 20, color: '#374151' }, 
+
+                // Final Goal Platform
+                { x: 2700, y: 500, w: 100, h: 20, color: '#3B82F6' },
+            ],
+            collectables: [
+                { x: 300, y: 420, type: 'diamond' },
+                { x: 450, y: 370, type: 'diamond' },
+                { x: 800, y: 320, type: 'diamond' },
+                { x: 1675, y: 420, type: 'diamond' },
+                { x: 2000, y: 320, type: 'diamond' }, // On gap jump
+                { x: 2740, y: 460, type: 'database' } // Final goal
+            ],
+            cannons: [
+                { x: 750, y: 330, direction: 'down', fireRate: 150 },
+                { x: 1400, y: 560, direction: 'left', fireRate: 120 },
+                { x: 2400, y: 560, direction: 'right', fireRate: 90 }
+            ],
+        };
+
+
+        // --- GAME CONTROL FUNCTIONS ---
+
+
+        function initGame() {
+            canvas.width = canvas.parentElement.clientWidth;
+            canvas.height = Math.min(600, window.innerHeight * 0.8);
+            window.addEventListener('resize', () => {
+                canvas.width = canvas.parentElement.clientWidth;
+                canvas.height = Math.min(600, window.innerHeight * 0.8);
+            });
+
+
+            // Initialize game state with level data
+            gameState.platforms = levelData.platforms.map(p => new Platform(p.x, p.y, p.w, p.h, p.color, p.move));
+            gameState.collectables = levelData.collectables.map(c => new Collectable(c.x, c.y, c.type));
+            gameState.cannons = levelData.cannons.map(c => new Cannon(c.x, c.y, c.direction, c.fireRate));
+            gameState.player = new Player(50, 500, 20, 20);
+            gameState.bullets = [];
+            gameState.score = 0;
+            gameState.gameOver = false;
+            gameState.gameWon = false;
+            gameState.cameraX = 0;
+            gameState.frame = 0;
+            scoreDisplay.textContent = gameState.score;
+
+
+            messageBox.classList.add('hidden', 'opacity-0');
+            messageBox.classList.remove('flex');
+        }
+
+
+        function updateGame() {
+            if (gameState.gameOver || gameState.gameWon) return;
+
+            // 1. Update Entities
+            gameState.player.update();
+            gameState.platforms.forEach(p => p.update()); // Update moving platforms
+            gameState.cannons.forEach(c => c.update());
+            gameState.bullets.forEach(b => b.update());
+            gameState.bullets = gameState.bullets.filter(b => b.isAlive);
+
+            // 2. Check Collectables
+            gameState.collectables.forEach(c => {
+                const p = gameState.player;
+                if (!c.collected &&
+                    p.x < c.x + c.size &&
+                    p.x + p.w > c.x &&
+                    p.y < c.y + c.size &&
+                    p.y + p.h > c.y) {
+
+                    if (c.type === 'diamond') {
+                        c.collected = true;
+                        gameState.score += 1;
+                        scoreDisplay.textContent = gameState.score;
+                    } else if (c.type === 'database') {
+                        endGame("SUCCESS! Central Database Retrieved. Mission Complete!", true);
+                    }
+                }
+            });
+
+            // 3. Check Bullet Collisions
+            gameState.bullets.forEach(b => {
+                const p = gameState.player;
+                // Simple circle-square collision check (approximation)
+                if (b.x + b.radius > p.x && b.x - b.radius < p.x + p.w && 
+                    b.y + b.radius > p.y && b.y - b.radius < p.y + p.h) {
+                    endGame("Mission Failed: Impact with hostile projectile!", false);
+                }
+            });
+
+            // 4. Update Camera
+            const targetX = gameState.player.x - canvas.width / 2 + gameState.player.w / 2;
+            gameState.cameraX += (targetX - gameState.cameraX) * CAM_LERP;
+            // Prevent camera from moving backwards past the start
+            gameState.cameraX = Math.max(0, gameState.cameraX);
+        }
+
+
+        function drawGame() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            // Draw all game elements, adjusting for camera offset
+            gameState.platforms.forEach(p => p.draw());
+            gameState.cannons.forEach(c => c.draw());
+            gameState.bullets.forEach(b => b.draw());
+            gameState.collectables.forEach(c => c.draw());
+            gameState.player.draw();
+        }
+
+
+        function gameLoop() {
+            gameState.frame++;
+            updateGame();
+            drawGame();
+            requestAnimationFrame(gameLoop);
+        }
+
+
+        function endGame(message, won = false) {
+            if (gameState.gameOver || gameState.gameWon) return;
+
+
+            if (won) {
+                gameState.gameWon = true;
+                messageText.innerHTML = `<span class="text-green-400">MISSION SUCCESS!</span><br>${message}<br>Final Score: ${gameState.score}`;
+                if (typeof window.saveHighScore === 'function') {
+                    window.saveHighScore(gameState.score);
+                }
+            } else {
+                gameState.gameOver = true;
+                messageText.innerHTML = `<span class="text-red-500">MISSION FAILED!</span><br>${message}<br>Score: ${gameState.score}`;
+            }
+
+
+            messageBox.classList.remove('hidden');
+            messageBox.classList.add('flex', 'opacity-100');
+        }
+
+
+        window.restartGame = function() {
+            initGame();
+        }
+
+
+        // --- INPUT HANDLING ---
+
+        document.addEventListener('keydown', (e) => {
+            if (gameState.gameOver || gameState.gameWon) return;
+            switch(e.key) {
+                case 'ArrowLeft':
+                case 'a':
+                    keys.left = true;
+                    break;
+                case 'ArrowRight':
+                case 'd':
+                    keys.right = true;
+                    break;
+                case ' ':
+                case 'ArrowUp':
+                case 'w':
+                    // Only jump if it's the first keydown while jump is allowed
+                    if (keys.canJump) {
+                        gameState.player.jump();
+                        keys.canJump = false; // Prevents spam jumping on keydown repeat
+                    }
+                    break;
+            }
+        });
+
+
+        document.addEventListener('keyup', (e) => {
+            switch(e.key) {
+                case 'ArrowLeft':
+                case 'a':
+                    keys.left = false;
+                    break;
+                case 'ArrowRight':
+                case 'd':
+                    keys.right = false;
+                    break;
+                case ' ':
+                case 'ArrowUp':
+                case 'w':
+                    keys.canJump = true; // Allow new jump on key up
+                    break;
+            }
+        });
+
+
+        // Initialize the game when the window loads
+        window.onload = function() {
+            initGame();
+            gameLoop();
+        };
+
+
+    </script>
+</body>
+</html>
